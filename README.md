@@ -39,4 +39,4 @@ Have fun!
 
 ## Kylin and Mondrian with Java Application
 
-Take a look into [Example Folder](/mondrian).
+Take a look into [Example Folder](/examples).
