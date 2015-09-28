@@ -1,0 +1,105 @@
+From fe2ca9b329c6985a489f2d35c015a552b32582e6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?S=C3=A9bastien=20Jelsch?= <mustangore@gmail.com>
+Date: Mon, 28 Sep 2015 17:52:25 +0200
+Subject: [PATCH] Add Kylin SQL Dialect
+
+---
+ src/main/java/mondrian/spi/Dialect.java            |  1 +
+ .../java/mondrian/spi/impl/JdbcDialectImpl.java    |  2 +
+ src/main/java/mondrian/spi/impl/KylinDialect.java  | 49 ++++++++++++++++++++++
+ .../META-INF/services/mondrian.spi.Dialect         |  1 +
+ 4 files changed, 53 insertions(+)
+ create mode 100644 src/main/java/mondrian/spi/impl/KylinDialect.java
+
+diff --git a/src/main/java/mondrian/spi/Dialect.java b/src/main/java/mondrian/spi/Dialect.java
+index 16af663..e48af2a 100644
+--- a/src/main/java/mondrian/spi/Dialect.java
++++ b/src/main/java/mondrian/spi/Dialect.java
+@@ -951,6 +951,7 @@ public interface Dialect {
+         INFOBRIGHT,
+         INGRES,
+         INTERBASE,
++        KYLIN,
+         LUCIDDB,
+         MSSQL,
+         MONETDB,
+diff --git a/src/main/java/mondrian/spi/impl/JdbcDialectImpl.java b/src/main/java/mondrian/spi/impl/JdbcDialectImpl.java
+index 6999e0c..f82368b 100644
+--- a/src/main/java/mondrian/spi/impl/JdbcDialectImpl.java
++++ b/src/main/java/mondrian/spi/impl/JdbcDialectImpl.java
+@@ -1065,6 +1065,8 @@ public class JdbcDialectImpl implements Dialect {
+             return DatabaseProduct.INGRES;
+         } else if (productName.equals("Interbase")) {
+             return DatabaseProduct.INTERBASE;
++        } else if (upperProductName.equals("KYLIN")) {
++            return DatabaseProduct.KYLIN;
+         } else if (upperProductName.equals("LUCIDDB")
+             || upperProductName.equals("OPTIQ"))
+         {
+diff --git a/src/main/java/mondrian/spi/impl/KylinDialect.java b/src/main/java/mondrian/spi/impl/KylinDialect.java
+new file mode 100644
+index 0000000..f7abbae
+--- /dev/null
++++ b/src/main/java/mondrian/spi/impl/KylinDialect.java
+@@ -0,0 +1,49 @@
++/*
++// This software is subject to the terms of the Eclipse Public License v1.0
++// Agreement, available at the following URL:
++// http://www.eclipse.org/legal/epl-v10.html.
++// You must accept the terms of that agreement to use this software.
++//
++// Copyright (C) 2015-2015 Pentaho
++// All Rights Reserved.
++*/
++package mondrian.spi.impl;
++
++import java.sql.Connection;
++import java.sql.SQLException;
++
++/**
++ * Implementation of {@link mondrian.spi.Dialect} for Kylin.
++ *
++ * @author Sebastien Jelsch
++ * @since Jun 08, 2015
++ */
++public class KylinDialect extends JdbcDialectImpl {
++
++    public static final JdbcDialectFactory FACTORY =
++            new JdbcDialectFactory(KylinDialect.class, DatabaseProduct.KYLIN) {
++                protected boolean acceptsConnection(Connection connection) {
++                    return super.acceptsConnection(connection);
++                }
++            };
++
++    /**
++     * Creates a KylinDialect.
++     *
++     * @param connection Connection
++     * @throws SQLException on error
++     */
++    public KylinDialect(Connection connection) throws SQLException {
++        super(connection);
++    }
++
++    @Override
++    public boolean allowsCountDistinct() {
++        return false;
++    }
++
++    @Override
++    public boolean allowsJoinOn() {
++        return true;
++    }
++}
+diff --git a/src/main/resources/META-INF/services/mondrian.spi.Dialect b/src/main/resources/META-INF/services/mondrian.spi.Dialect
+index c09845f..132ce5e 100644
+--- a/src/main/resources/META-INF/services/mondrian.spi.Dialect
++++ b/src/main/resources/META-INF/services/mondrian.spi.Dialect
+@@ -26,3 +26,4 @@ mondrian.spi.impl.TeradataDialect
+ mondrian.spi.impl.VectorwiseDialect
+ mondrian.spi.impl.VerticaDialect
+ mondrian.spi.impl.IngresDialect
++mondrian.spi.impl.KylinDialect
+-- 
+2.3.8 (Apple Git-58)
+
