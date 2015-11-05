@@ -1,0 +1,31 @@
+From 7322c266c41ad0e43d8b625faa6e28865bbe9fd9 Mon Sep 17 00:00:00 2001
+From: Sébastien Jelsch <sebastien.jelsch@inovex.de>
+Date: Fri, 27 Feb 2015 12:02:09 +0100
+Subject: [PATCH] Fix for Kylin integration
+
+---
+ core/src/org/pentaho/di/core/database/Database.java | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/core/src/org/pentaho/di/core/database/Database.java b/core/src/org/pentaho/di/core/database/Database.java
+index 6968712..a26cb21 100644
+--- a/core/src/org/pentaho/di/core/database/Database.java
++++ b/core/src/org/pentaho/di/core/database/Database.java
+@@ -2189,7 +2189,13 @@ public class Database implements VariableSpace, LoggingObjectInterface {
+           setValues( par, data, ps );
+         }
+         ResultSet r = ps.executeQuery();
+-        fields = getRowInfo( ps.getMetaData(), false, false );
++
++        ResultSetMetaData metadata = ps.getMetaData();
++        if( metadata == null ) {
++          metadata = r.getMetaData();
++        }
++
++        fields = getRowInfo( metadata, false, false );
+         r.close();
+         ps.close();
+       }
+--
+1.9.3 (Apple Git-50)
+
