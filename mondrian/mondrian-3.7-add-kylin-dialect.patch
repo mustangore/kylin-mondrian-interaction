@@ -1,0 +1,603 @@
+From 9db24058c87b53f7e11f055e649dbb9a1c6a30fd Mon Sep 17 00:00:00 2001
+From: Mustangore <sebastien.jelsch@inovex.de>
+Date: Wed, 22 Apr 2015 11:38:40 +0200
+Subject: [PATCH 1/2] Integrate mondrian to kylin for mdx api
+
+---
+ server/pom.xml                                     | 64 ++++++++++++++-
+ .../kylinolap/rest/controller/MdxController.java   | 91 ++++++++++++++++++++++
+ .../com/kylinolap/rest/request/MdxRequest.java     | 73 +++++++++++++++++
+ .../com/kylinolap/rest/response/MdxResponse.java   | 49 ++++++++++++
+ webapp/app/index.html                              |  2 +
+ webapp/app/js/controllers/mdx.js                   | 62 +++++++++++++++
+ webapp/app/js/services/mdx.js                      |  7 ++
+ webapp/app/partials/header.html                    |  3 +
+ webapp/app/partials/mdx/mdx.html                   | 63 +++++++++++++++
+ webapp/app/partials/query/query.html               |  2 +-
+ webapp/app/routes.json                             |  8 ++
+ 11 files changed, 422 insertions(+), 2 deletions(-)
+ create mode 100644 server/src/main/java/com/kylinolap/rest/controller/MdxController.java
+ create mode 100644 server/src/main/java/com/kylinolap/rest/request/MdxRequest.java
+ create mode 100644 server/src/main/java/com/kylinolap/rest/response/MdxResponse.java
+ create mode 100644 webapp/app/js/controllers/mdx.js
+ create mode 100644 webapp/app/js/services/mdx.js
+ create mode 100644 webapp/app/partials/mdx/mdx.html
+
+diff --git a/server/pom.xml b/server/pom.xml
+index dc2486e..c3b3c73 100644
+--- a/server/pom.xml
++++ b/server/pom.xml
+@@ -354,7 +354,65 @@
+ 		    <groupId>com.thetransactioncompany</groupId>
+ 		    <artifactId>cors-filter</artifactId>
+ 		    <version>1.3.2</version>
+-		</dependency>        
++		</dependency>
++		<dependency>
++			<groupId>eigenbase</groupId>
++			<artifactId>eigenbase-properties</artifactId>
++			<version>1.1.4</version>
++		</dependency>
++		<dependency>
++			<groupId>eigenbase</groupId>
++			<artifactId>eigenbase-resgen</artifactId>
++			<version>1.3.4</version>
++		</dependency>
++		<dependency>
++			<groupId>eigenbase</groupId>
++			<artifactId>eigenbase-xom</artifactId>
++			<version>1.3.4</version>
++		</dependency>
++		<dependency>
++			<groupId>commons-logging</groupId>
++			<artifactId>commons-logging</artifactId>
++			<version>1.1.1</version>
++		</dependency>
++		<dependency>
++			<groupId>commons-collections</groupId>
++			<artifactId>commons-collections</artifactId>
++			<version>3.2</version>
++		</dependency>
++		<dependency>
++			<groupId>commons-dbcp</groupId>
++			<artifactId>commons-dbcp</artifactId>
++			<version>1.2.1</version>
++		</dependency>
++		<dependency>
++			<groupId>commons-io</groupId>
++			<artifactId>commons-io</artifactId>
++		</dependency>
++		<dependency>
++			<groupId>commons-lang</groupId>
++			<artifactId>commons-lang</artifactId>
++			</dependency>
++		<dependency>
++			<groupId>commons-math</groupId>
++			<artifactId>commons-math</artifactId>
++			<version>1.1</version>
++		</dependency>
++		<dependency>
++			<groupId>commons-pool</groupId>
++			<artifactId>commons-pool</artifactId>
++			<version>1.2</version>
++		</dependency>
++		<dependency>
++			<groupId>commons-vfs</groupId>
++			<artifactId>commons-vfs</artifactId>
++			<version>20100924-pentaho</version>
++        </dependency>
++        <dependency>
++			<groupId>org.olap4j</groupId>
++			<artifactId>olap4j</artifactId>
++			<version>1.2.0</version>
++		</dependency>
+     </dependencies>
+ 
+     <build>
+@@ -382,6 +440,10 @@
+             <url>http://mvn-adamgent.googlecode.com/svn/maven/release</url>
+             <name>Adam Gent Maven Repository</name>
+         </repository>
++        <repository>
++            <id>pentaho-releases</id>
++            <url>http://repository.pentaho.org/artifactory/repo/</url>
++        </repository>
+     </repositories>
+     <pluginRepositories>
+         <pluginRepository>
+diff --git a/server/src/main/java/com/kylinolap/rest/controller/MdxController.java b/server/src/main/java/com/kylinolap/rest/controller/MdxController.java
+new file mode 100644
+index 0000000..4fb5fbc
+--- /dev/null
++++ b/server/src/main/java/com/kylinolap/rest/controller/MdxController.java
+@@ -0,0 +1,91 @@
++/*
++ * Copyright 2013-2014 eBay Software Foundation
++ *
++ * Licensed under the <dependency>
++    <groupId>com.ryantenney.metrics</groupId>
++    <artifactId>metrics-spring</artifactId>
++    <version>3.0.0</version>
++</dependency>che License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *   http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package com.kylinolap.rest.controller;
++
++import java.sql.Connection;
++import java.sql.DriverManager;
++import java.sql.SQLException;
++
++import org.olap4j.CellSet;
++import org.olap4j.OlapConnection;
++import org.olap4j.OlapStatement;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.stereotype.Controller;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RequestMethod;
++import org.springframework.web.bind.annotation.ResponseBody;
++
++import com.codahale.metrics.annotation.Timed;
++import com.kylinolap.rest.request.MdxRequest;
++import com.kylinolap.rest.response.MdxResponse;
++import com.kylinolap.rest.service.MdxService;
++
++/**
++ * Handle mdx requests.
++ * 
++ * @author Sébastien Jelsch | sebastien.jelsch@inovex.de
++ */
++@Controller
++public class MdxController extends BasicController {
++
++    private static final Logger logger = LoggerFactory.getLogger(MdxController.class);
++
++    @Autowired
++    private MdxService mdxService;
++
++    @RequestMapping(value = "/mdx", method = RequestMethod.POST)
++    @ResponseBody
++    @Timed(name = "mdx")
++    public MdxResponse mdx(@RequestBody MdxRequest mdxRequest) {
++        try {
++            Class.forName("mondrian.olap4j.MondrianOlap4jDriver");
++            
++            Connection connection = DriverManager.getConnection(
++                    "jdbc:mondrian:"
++                    + "Jdbc=jdbc:kylin://localhost:7070/tpcds_data;"
++                    + "JdbcDrivers=org.apache.kylin.jdbc.Driver;"
++                    + "JdbcUser=admin;"
++                    + "JdbcPassword=KYLIN;"
++                    + "Catalog=file:/home/sjelsch/KylinCluster1GB_TPCDS_Data.mondrian.xml;");
++            
++            // We are dealing with an OLAP connection. we must unwrap it.
++            final OlapConnection olapConnection = connection.unwrap(OlapConnection.class);
++            
++            // Prepare a statement.
++            final OlapStatement olapStatement = olapConnection.createStatement();
++            CellSet cellSet = olapStatement.executeOlapQuery(mdxRequest.getMdx());
++            
++            MdxResponse mdxResponse = new MdxResponse(cellSet);
++            return mdxResponse;
++        } catch (ClassNotFoundException e) {
++            logger.error("Exception while initializing mondrian olap4j driver", e);
++            e.printStackTrace();
++        } catch (SQLException e) {
++            logger.error("Exception while executing mdx", e);
++            e.printStackTrace();
++        }
++        
++        return null;
++    }
++    
++}
+\ No newline at end of file
+diff --git a/server/src/main/java/com/kylinolap/rest/request/MdxRequest.java b/server/src/main/java/com/kylinolap/rest/request/MdxRequest.java
+new file mode 100644
+index 0000000..fabd735
+--- /dev/null
++++ b/server/src/main/java/com/kylinolap/rest/request/MdxRequest.java
+@@ -0,0 +1,73 @@
++/*
++ * Copyright 2013-2014 eBay Software Foundation
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *   http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package com.kylinolap.rest.request;
++
++public class MdxRequest {
++
++    private String mdx;
++    private String project;
++    
++    public MdxRequest() {
++    }
++
++    public String getProject() {
++        return project;
++    }
++
++    public void setProject(String project) {
++        this.project = project;
++    }
++
++    public String getMdx() {
++        return mdx;
++    }
++
++    public void setMdx(String mdx) {
++        this.mdx = mdx;
++    }
++
++    @Override
++    public int hashCode() {
++        final int prime = 31;
++        int result = 1;
++        result = prime * result + ((project == null) ? 0 : project.hashCode());
++        result = prime * result + ((mdx == null) ? 0 : mdx.hashCode());
++        return result;
++    }
++
++    @Override
++    public boolean equals(Object obj) {
++        if (this == obj)
++            return true;
++        if (obj == null)
++            return false;
++        if (getClass() != obj.getClass())
++            return false;
++        MdxRequest other = (MdxRequest) obj;
++        if (project == null) {
++            if (other.project != null)
++                return false;
++        } else if (!project.equals(other.project))
++            return false;
++        if (mdx == null) {
++            if (other.mdx != null)
++                return false;
++        } else if (!mdx.equals(other.mdx))
++            return false;
++        return true;
++    }
++
++}
+\ No newline at end of file
+diff --git a/server/src/main/java/com/kylinolap/rest/response/MdxResponse.java b/server/src/main/java/com/kylinolap/rest/response/MdxResponse.java
+new file mode 100644
+index 0000000..58b2772
+--- /dev/null
++++ b/server/src/main/java/com/kylinolap/rest/response/MdxResponse.java
+@@ -0,0 +1,49 @@
++/*
++ * Copyright 2013-2014 eBay Software Foundation
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *   http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package com.kylinolap.rest.response;
++
++import java.io.PrintWriter;
++import java.io.Serializable;
++import java.io.StringWriter;
++
++import org.olap4j.CellSet;
++import org.olap4j.layout.RectangularCellSetFormatter;
++
++public class MdxResponse implements Serializable {
++    
++    private static final long serialVersionUID = 1L;
++    
++    private String result;
++
++    public MdxResponse(CellSet cellSet) {
++        this.result = generateStringOutput(cellSet);
++    }
++
++    private String generateStringOutput(CellSet cellSet) {
++      RectangularCellSetFormatter formatter = new RectangularCellSetFormatter(false);
++      StringWriter stringWriter = new StringWriter();
++      PrintWriter writer = new PrintWriter(stringWriter);
++      
++      formatter.format(cellSet, writer);
++      writer.flush();
++      
++      return stringWriter.toString();
++    }
++    
++    public String getResult() {
++        return result;
++    }
++}
+diff --git a/webapp/app/index.html b/webapp/app/index.html
+index b1fb25a..b8a0a91 100644
+--- a/webapp/app/index.html
++++ b/webapp/app/index.html
+@@ -102,6 +102,7 @@
+ <script src="js/services/message.js"></script>
+ <script src="js/services/projects.js"></script>
+ <script src="js/services/query.js"></script>
++<script src="js/services/mdx.js"></script>
+ <script src="js/services/tables.js"></script>
+ <script src="js/services/tree.js"></script>
+ <script src="js/services/users.js"></script>
+@@ -117,6 +118,7 @@
+ <script src="js/controllers/cubeEdit.js"></script>
+ <script src="js/controllers/cubeSchema.js"></script>
+ <script src="js/controllers/query.js"></script>
++<script src="js/controllers/mdx.js"></script>
+ <script src="js/controllers/admin.js"></script>
+ <script src="js/controllers/sourceMeta.js"></script>
+ <script src="js/controllers/projectMeta.js"></script>
+diff --git a/webapp/app/js/controllers/mdx.js b/webapp/app/js/controllers/mdx.js
+new file mode 100644
+index 0000000..c793847
+--- /dev/null
++++ b/webapp/app/js/controllers/mdx.js
+@@ -0,0 +1,62 @@
++'use strict';
++
++KylinApp
++    .controller('MdxCtrl', function ($scope, storage, $base64, $q, $location, $anchorScroll, $routeParams, MdxService, $modal, MessageService, $domUtilityService, $timeout, TableService,SweetAlert) {
++        $scope.mainPanel = 'mdx';
++        $scope.queryString = "";
++        $scope.curQuery = null;
++        $scope.result = "";
++
++        $scope.ui = {fullScreen: false};
++
++        $scope.statusList = [
++            {name: 'All', value: ''},
++            {name: 'Executing', value: 'executing'},
++            {name: 'Success', value: 'success'},
++            {name: 'Failed', value: 'failed'}
++        ];
++        $scope.statusFilter = null;
++
++        $scope.state = {
++            selectedProject: null
++        };
++
++        var Query = {
++            createNew: function (mdx, project) {
++                var query = {
++                    originMdx: mdx,
++                    mdx: mdx,
++                    project: (!!project)? project:$scope.project.selectedProject,
++                    status: 'executing',
++                    result: {
++                        isResponsePartial: false
++                    },
++                    startTime: new Date()
++                };
++
++                return query;
++            }
++        }
++
++        $scope.parseQueryResult = function (queryObj, response, status) {
++            $scope.result = response.result;
++        }
++
++        $scope.query = function (query) {
++            MdxService.mdx({}, {mdx: query.mdx, project: query.project}, function (response) {
++                $scope.parseQueryResult(query, response, 'success');
++            }, function (response) {
++                $scope.parseQueryResult(query, response, 'failed');
++            });
++        }
++
++        $scope.submitQuery = function (queryString, project) {
++            if (!queryString && !$scope.queryString) {
++                return;
++            }
++            var mdx = (!!queryString) ? queryString : $scope.queryString;
++            var newQuery = Query.createNew(mdx, project);
++            $scope.curQuery = newQuery;
++            $scope.query($scope.curQuery);
++        }
++    });
+diff --git a/webapp/app/js/services/mdx.js b/webapp/app/js/services/mdx.js
+new file mode 100644
+index 0000000..259486f
+--- /dev/null
++++ b/webapp/app/js/services/mdx.js
+@@ -0,0 +1,7 @@
++KylinApp.factory('MdxService', ['$resource', function ($resource, config) {
++    return $resource(Config.service.url + ':subject/:subject_id/:propName/:propValue/:action', {}, {
++        mdx: {method: 'POST', params: {action: 'mdx'}, isArray: false},
++        getTables: {method: 'GET', params: {subject: 'tables_and_columns'}, isArray: true}
++    });
++}])
++;
+\ No newline at end of file
+diff --git a/webapp/app/partials/header.html b/webapp/app/partials/header.html
+index b5b0771..f8acefb 100644
+--- a/webapp/app/partials/header.html
++++ b/webapp/app/partials/header.html
+@@ -16,6 +16,9 @@
+                     <li class="{{activeTab=='query'?'purple':'green'}}" ng-if="userService.isAuthorized()">
+                         <a href="query">Query</a>
+                     </li>
++                    <li class="{{activeTab=='mdx'?'purple':'green'}}" ng-if="userService.isAuthorized()">
++                        <a href="mdx">MDX Statement</a>
++                    </li>
+                     <li class="{{activeTab=='cubes'?'purple':'green'}}" ng-if="userService.isAuthorized()">
+                         <a href="cubes">Cubes</a>
+                     </li>
+diff --git a/webapp/app/partials/mdx/mdx.html b/webapp/app/partials/mdx/mdx.html
+new file mode 100644
+index 0000000..7e9474b
+--- /dev/null
++++ b/webapp/app/partials/mdx/mdx.html
+@@ -0,0 +1,63 @@
++<div class="page-header" style="height: 50px;">
++    <!--Project-->
++    <form class="navbar-form navbar-left" style="margin-top: 0px !important;" ng-if="userService.isAuthorized()">
++        <div class="form-group">
++            <span><b>Project: </b></span>
++            <select chosen ng-model="project.selectedProject" ng-init="newAccess.permission=permissions.READ.value;"
++                    ng-options="project as project for project in project.projects"
++                    style="width: 150px"
++                    data-placeholder="select a project"
++                    class="chosen-select">
++                <option ng-if="userService.hasRole('ROLE_ADMIN')" ng-selected="project.selectedProject==null"  value=""> -- Choose Project -- </option>
++            </select>
++            <!--Project-->
++            <a class="btn btn-xs btn-info" href="projects" tooltip="Manage Project"><i class="fa fa-gears"></i></a>
++            <a class="btn btn-xs btn-primary" ng-if="userService.hasRole('ROLE_ADMIN')||userService.hasRole('ROLE_MODELER')&&kylinConfig.getDeployEnv()!=='PROD'" style="width: 29px" tooltip="Add Project" ng-click="toCreateProj()">
++                <i class="fa fa-plus"></i>
++            </a>
++        </div>
++    </form>
++</div>
++<div class="row">
++    <div class="{{fullsql?'hidden':'col-xs-3'}}">
++        <div ng-include src="'partials/projects/project_table_tree.html'" ng-controller="ProjectMetaCtrl"></div>
++    </div>
++    <div class="{{fullsql?'col-xs-12':'col-xs-9'}}">
++        <div class="nav-tabs-custom">
++            <ul class="nav nav-tabs">
++                <li class="{{mainPanel=='mdx'?'active':''}}">
++                    <a ng-click="mainPanel='mdx'" style="cursor: pointer">New MDX</a>
++                </li>
++            </ul>
++
++            <div ng-show="mainPanel=='mdx'">
++                <form name="mdx_panel">
++                    <section style="margin-top: 1px;">
++                        <textarea style="height: 220px; width: 100%;" ng-model="queryString" required></textarea>
++                    </section>
++                    <div class="pull-left">
++                        <h4>
++                            Project: <span class="label label-info">{{project.selectedProject}}</span>
++                        </h4>
++                    </div>
++                    <div class="pull-right">
++                        <button class="btn btn-sm btn-primary" ng-click="submitQuery()" ng-disabled="mdx_panel.$invalid">
++                            Submit
++                        </button>
++                    </div>
++                </form>
++            </div>
++        </div>
++
++        <div class="clearfix"></div>
++        <div class="hr hr24 hr-dotted"></div>
++
++        <div ng-if="!result">
++            <div no-result text="No MDX Result."></div>
++        </div>
++        <div ng-if="result">
++            <h4>Result:</h4>
++            <div style="font-family: monospace; white-space:pre;">{{result}}</div>
++        </div>
++    </div>
++</div>
+diff --git a/webapp/app/partials/query/query.html b/webapp/app/partials/query/query.html
+index 4ea775f..d1e5bf1 100644
+--- a/webapp/app/partials/query/query.html
++++ b/webapp/app/partials/query/query.html
+@@ -60,7 +60,7 @@
+                     <div class="pull-right">
+                         <label>LIMIT</label>
+                         <input type="text" style="width:100px;" class="inline form-control" ng-model="rowsPerPage" ng-pattern="/^\d+$/" ng-blur="checkLimit()" />
+-                        <button class="btn btn-sm btn-primary" ng-click="submitQuery()" ng-disabled="query_panel.$invalid">
++                        <button class="btn btn-sm btn-primary" ng-click="submitQuery()">
+                             Submit
+                         </button>
+                     </div>
+diff --git a/webapp/app/routes.json b/webapp/app/routes.json
+index 8a72f09..0977d33 100644
+--- a/webapp/app/routes.json
++++ b/webapp/app/routes.json
+@@ -88,6 +88,14 @@
+         }
+     },
+     {
++        "url": "/mdx",
++        "params": {
++            "templateUrl": "partials/mdx/mdx.html",
++            "tab": "mdx",
++            "controller": "MdxCtrl"
++        }
++    },
++    {
+         "url": "/admin",
+         "params": {
+             "templateUrl": "partials/admin/admin.html",
+-- 
+1.9.5 (Apple Git-50.3)
+
+
+From fe71fae65f3274751499c9bc4a645bb47d0ad4ab Mon Sep 17 00:00:00 2001
+From: Mustangore <sebastien.jelsch@inovex.de>
+Date: Wed, 22 Apr 2015 11:52:56 +0200
+Subject: [PATCH 2/2] Remove useless MdxService components
+
+---
+ .../src/main/java/com/kylinolap/rest/controller/MdxController.java   | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/server/src/main/java/com/kylinolap/rest/controller/MdxController.java b/server/src/main/java/com/kylinolap/rest/controller/MdxController.java
+index 4fb5fbc..282689d 100644
+--- a/server/src/main/java/com/kylinolap/rest/controller/MdxController.java
++++ b/server/src/main/java/com/kylinolap/rest/controller/MdxController.java
+@@ -28,7 +28,6 @@ import org.olap4j.OlapConnection;
+ import org.olap4j.OlapStatement;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+-import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.stereotype.Controller;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestMapping;
+@@ -38,7 +37,6 @@ import org.springframework.web.bind.annotation.ResponseBody;
+ import com.codahale.metrics.annotation.Timed;
+ import com.kylinolap.rest.request.MdxRequest;
+ import com.kylinolap.rest.response.MdxResponse;
+-import com.kylinolap.rest.service.MdxService;
+ 
+ /**
+  * Handle mdx requests.
+@@ -50,9 +48,6 @@ public class MdxController extends BasicController {
+ 
+     private static final Logger logger = LoggerFactory.getLogger(MdxController.class);
+ 
+-    @Autowired
+-    private MdxService mdxService;
+-
+     @RequestMapping(value = "/mdx", method = RequestMethod.POST)
+     @ResponseBody
+     @Timed(name = "mdx")
+-- 
+1.9.5 (Apple Git-50.3)
+
